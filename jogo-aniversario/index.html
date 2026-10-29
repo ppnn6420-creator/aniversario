@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>A Subida da Bolinha</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -28,7 +28,8 @@ body {
   -webkit-tap-highlight-color: transparent; font-family: var(--body);
 }
 #wrap { position: fixed; inset: 0; display: flex; justify-content: center; align-items: center; }
-#wrap.touch { align-items: flex-start; padding-top: env(safe-area-inset-top, 0px); }
+* { -webkit-touch-callout: none; }
+[hidden] { display: none !important; }
 canvas { display: block; outline: none; }
 #touch {
   position: fixed; left: 0; right: 0; bottom: 0;
@@ -61,17 +62,22 @@ canvas { display: block; outline: none; }
 // Nome do aniversariante (deixe vazio para mostrar "mano")
 const NOME = '';
 
-const W = 480, H = 800;
+// Largura lógica fixa; a altura acompanha o formato da tela (celular em pé usa a tela toda)
+const W = 480;
+let H = 800;
 const cv = document.getElementById('c'), ctx = cv.getContext('2d');
-const wrap = document.getElementById('wrap'), touchUI = document.getElementById('touch');
+const touchUI = document.getElementById('touch');
 const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
 const FD = "'Lilita One', 'Arial Black', sans-serif", FB = "'Nunito', system-ui, sans-serif";
-if (isTouch) wrap.classList.add('touch');
+// espaço que os botões de toque ocupam embaixo, em unidades do jogo
+const BOTTOM_PAD = isTouch ? 230 : 60;
+const groundCam = () => -H + BOTTOM_PAD;
 
 function resize() {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const availH = isTouch ? innerHeight - 130 : innerHeight;
-  const s = Math.min(innerWidth / W, availH / H);
+  const vw = innerWidth, vh = innerHeight;
+  H = vh > vw ? Math.round(Math.min(1100, Math.max(700, W * vh / vw))) : 800;
+  const s = Math.min(vw / W, vh / H);
   cv.style.width = W * s + 'px'; cv.style.height = H * s + 'px';
   cv.width = Math.round(W * s * dpr); cv.height = Math.round(H * s * dpr);
   ctx.setTransform(cv.width / W, 0, 0, cv.height / H, 0, 0);
@@ -149,6 +155,8 @@ function buildWorld() {
     if (L > 0) {
       y -= 112;
       const cp = { x: W / 2 - 110, y, w: 220, h: 20, type: lv.plat, lvl: L, bx: W / 2 - 110, amp: 0, dx: 0, cp: true, seed: rnd() };
+      // o checkpoint de asteroide/cristal também precisa do contorno, senão o desenho quebra
+      if (lv.plat === 'asteroid' || lv.plat === 'crystal') cp.pts = Array.from({ length: 10 }, (_, i) => { const a = i / 10 * Math.PI * 2; return [Math.cos(a) * 0.96, Math.sin(a) < 0 ? -0.5 : 0.85]; });
       plats.push(cp); cps[L] = cp; px = W / 2;
     }
     while (y - lv.gap[1] > top) {
@@ -185,15 +193,14 @@ function buildWorld() {
 let state = 'title', T = 0, camY = -H + 60, shake = 0;
 let P, hearts, playTime, meteors, warns, meteorTimer, particles, confetti, balloons, banner, toast, reached;
 let sceneI = 0, sceneT = 0, et = 0, ft = 0, gateOpen = 0, flash = 0, gateSoundDone = false;
-let uiButtons = [];
+let uiButtons = [], uiOY = 0;
 const keys = { left: false, right: false };
-const GROUND_CAM = -H + 60;
 
 function resetGame() {
   buildWorld();
   P = { x: W / 2, y: -16, vx: 0, vy: 0, r: 16, ground: plats[0], safe: plats[0], buffer: 0, coyote: 0, face: 1, sq: 1, inv: 0 };
   hearts = 3; playTime = 0; meteors = []; warns = []; meteorTimer = 3; particles = []; confetti = []; banner = null; toast = null; reached = -1;
-  gateOpen = 0; flash = 0; et = 0; ft = 0; gateSoundDone = false; camY = GROUND_CAM;
+  gateOpen = 0; flash = 0; et = 0; ft = 0; gateSoundDone = false; camY = groundCam();
 }
 resetGame();
 
@@ -355,7 +362,7 @@ function update(dt) {
     playTime += dt;
     updatePlayer(dt);
     updateMeteors(dt);
-    const target = Math.min(P.y - H * 0.6, GROUND_CAM);
+    const target = Math.min(P.y - H * 0.6, groundCam());
     camY += (target - camY) * Math.min(1, dt * 5);
   } else if (state === 'ending') {
     et += dt;
@@ -378,8 +385,26 @@ function update(dt) {
 }
 
 // ---------- desenho: fundo ----------
-const STARS = Array.from({ length: 150 }, () => ({ x: Math.random() * W, y: Math.random() * H, s: 0.5 + Math.random() * 1.6, d: 0.04 + Math.random() * 0.25, tw: Math.random() * 6 }));
+const STARS = Array.from({ length: 150 }, () => ({ x: Math.random() * W, y: Math.random() * 1100, s: 0.5 + Math.random() * 1.6, d: 0.04 + Math.random() * 0.25, tw: Math.random() * 6 }));
 const SKY_BUILDINGS = (() => { const r = mulberry32(7), a = []; let x = -10; while (x < W) { const w = 40 + r() * 50; a.push({ x, w, h: 120 + r() * 220 }); x += w + 4; } return a; })();
+// cidade e galáxias desenhadas uma vez só, para aliviar o celular
+function offscreen(w, h, paint) { const c = document.createElement('canvas'); c.width = w * 2; c.height = h * 2; const o = c.getContext('2d'); o.scale(2, 2); paint(o); return c; }
+const SKYLINE = offscreen(W, 360, o => {
+  for (const b of SKY_BUILDINGS) {
+    o.fillStyle = 'rgba(36,70,128,0.28)'; o.fillRect(b.x, 360 - b.h, b.w, b.h);
+    o.fillStyle = 'rgba(255,240,170,0.22)';
+    for (let yy = 360 - b.h + 12; yy < 360; yy += 22) for (let xx = b.x + 8; xx < b.x + b.w - 10; xx += 14) o.fillRect(xx, yy, 6, 9);
+  }
+});
+const GALAXIES = [290, 200].map(hue => offscreen(240, 240, o => {
+  const halo = o.createRadialGradient(120, 120, 0, 120, 120, 110); halo.addColorStop(0, `hsla(${hue},90%,80%,0.55)`); halo.addColorStop(1, `hsla(${hue},90%,50%,0)`);
+  o.fillStyle = halo; o.beginPath(); o.arc(120, 120, 110, 0, 7); o.fill();
+  for (let k = 0; k < 140; k++) {
+    const a = k * 0.09 + (k % 2) * Math.PI, rad = k * 0.7;
+    o.fillStyle = `hsla(${hue + k * 0.4},90%,${85 - k * 0.2}%,${1 - k / 160})`;
+    o.fillRect(120 + Math.cos(a) * rad, 120 + Math.sin(a) * rad, 2, 2);
+  }
+}));
 const SKY_CLOUDS = Array.from({ length: 9 }, (_, i) => ({ x: Math.random() * W, y: i * 120, s: 0.6 + Math.random() * 0.9, d: 0.15 + Math.random() * 0.2 }));
 function levelBlend(cam) {
   const f = -(cam + H / 2) / LEVEL_H, i = clamp(Math.floor(f), 0, 6), t = i < 6 ? smooth((f - i - 0.8) / 0.2) : 0;
@@ -425,11 +450,7 @@ function drawBackground(cam) {
   // Prédios: cidade ao fundo
   if (w[1] > 0.01) {
     ctx.globalAlpha = w[1];
-    for (const b of SKY_BUILDINGS) {
-      ctx.fillStyle = 'rgba(36,70,128,0.28)'; ctx.fillRect(b.x, H - b.h, b.w, b.h);
-      ctx.fillStyle = 'rgba(255,240,170,0.22)';
-      for (let yy = H - b.h + 12; yy < H; yy += 22) for (let xx = b.x + 8; xx < b.x + b.w - 10; xx += 14) ctx.fillRect(xx, yy, 6, 9);
-    }
+    ctx.drawImage(SKYLINE, 0, H - 360, W, 360);
     ctx.globalAlpha = 1;
   }
   // Céu: nuvens grandes
@@ -451,15 +472,10 @@ function drawBackground(cam) {
   // Galáxias: espirais
   if (w[4] > 0.01) {
     ctx.globalAlpha = w[4];
-    for (const [gx, gy, sc, hue] of [[120, 230, 1, 290], [370, 560, 0.75, 200]]) {
-      const halo = ctx.createRadialGradient(gx, gy, 0, gx, gy, 110 * sc); halo.addColorStop(0, `hsla(${hue},90%,80%,0.55)`); halo.addColorStop(1, `hsla(${hue},90%,50%,0)`);
-      ctx.fillStyle = halo; circle(gx, gy, 110 * sc); ctx.fill();
-      for (let k = 0; k < 140; k++) {
-        const arm = k % 2, a = k * 0.09 + arm * Math.PI + T * 0.15, rad = k * 0.7 * sc;
-        ctx.fillStyle = `hsla(${hue + k * 0.4},90%,${85 - k * 0.2}%,${1 - k / 160})`;
-        ctx.fillRect(gx + Math.cos(a) * rad, gy + Math.sin(a) * rad * 0.55, 2, 2);
-      }
-    }
+    [[120, 230, 1], [370, H * 0.7, 0.75]].forEach(([gx, gy, sc], k) => {
+      ctx.save(); ctx.translate(gx, gy); ctx.scale(sc, sc * 0.55); ctx.rotate(T * 0.15);
+      ctx.drawImage(GALAXIES[k], -120, -120, 240, 240); ctx.restore();
+    });
     ctx.globalAlpha = 1;
   }
   // Universo: nebulosas
@@ -535,14 +551,14 @@ function drawPlat(p, cam) {
       ctx.fillStyle = 'rgba(40,36,52,0.5)'; circle(x + w * 0.3, y + 10, 5); ctx.fill(); circle(x + w * 0.68, y + 14, 4); ctx.fill();
       break;
     case 'crystal':
-      ctx.save(); ctx.shadowColor = '#d38bff'; ctx.shadowBlur = 14;
-      polyPlat(p, y, '#e2a6ff', '#5a189a', '#f3d4ff'); ctx.restore();
+      ctx.fillStyle = 'rgba(211,139,255,0.25)'; rr(x - 6, y - 6, w + 12, 34, 16); ctx.fill();
+      polyPlat(p, y, '#e2a6ff', '#5a189a', '#f3d4ff');
       ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x + w * 0.3, y + 2); ctx.lineTo(x + w * 0.42, y + 16); ctx.lineTo(x + w * 0.6, y + 3); ctx.stroke();
       break;
     case 'star': {
-      ctx.save(); ctx.shadowColor = '#5ff4ff'; ctx.shadowBlur = 16;
+      ctx.fillStyle = 'rgba(95,244,255,0.25)'; rr(x - 6, y - 6, w + 12, 27, 13); ctx.fill();
       const g = ctx.createLinearGradient(0, y, 0, y + 16); g.addColorStop(0, '#b8fcff'); g.addColorStop(1, '#2a6fdb');
-      ctx.fillStyle = g; rr(x, y, w, 15, 8); ctx.fill(); ctx.restore();
+      ctx.fillStyle = g; rr(x, y, w, 15, 8); ctx.fill();
       for (const sx of [x, x + w]) sparkle(sx, y + 7, 7, T * 2);
       break;
     }
@@ -766,10 +782,10 @@ function drawButton(label, x, y, w, h, bg, fg, fn) {
   ctx.fillStyle = 'rgba(0,0,0,0.18)'; rr(x, y + 4, w, h, h / 2); ctx.fill();
   ctx.fillStyle = bg; rr(x, y, w, h, h / 2); ctx.fill();
   ctx.font = `20px ${FD}`; ctx.textAlign = 'center'; ctx.fillStyle = fg; ctx.fillText(label, x + w / 2, y + h / 2 + 7);
-  uiButtons.push({ x, y, w, h, fn });
+  uiButtons.push({ x, y: y + uiOY, w, h, fn });
 }
 function drawTitle() {
-  camY = GROUND_CAM; drawWorld(camY);
+  camY = groundCam(); drawWorld(camY);
   const bob = Math.abs(Math.sin(T * 3)) * 26;
   drawBall(W / 2, -16 - bob - camY, 32, { sq: bob < 3 ? 1.15 : 0.95, lookY: -0.6 });
   ctx.textAlign = 'center';
@@ -783,9 +799,9 @@ function drawTitle() {
 }
 function drawIntro() {
   const s = SCENES[sceneI], gateCam = finalPlat.y - H * 0.72;
-  let cam = GROUND_CAM;
+  let cam = groundCam();
   if (s.cam === 'gate') cam = gateCam;
-  else if (s.cam === 'fly') cam = GROUND_CAM + (gateCam - GROUND_CAM) * ease(clamp((sceneT - 0.6) / (s.d - 1.2), 0, 1));
+  else if (s.cam === 'fly') cam = groundCam() + (gateCam - groundCam()) * ease(clamp((sceneT - 0.6) / (s.d - 1.2), 0, 1));
   camY = cam; drawWorld(cam);
   const bob = Math.abs(Math.sin(T * 3)) * (sceneI === 0 ? 20 : 6);
   if (-cam < H + 100) drawBall(W / 2, -26 - bob - cam, 26, { lookX: s.look ? s.look[0] : 0, lookY: s.look ? s.look[1] : 0, brave: s.brave });
@@ -852,6 +868,10 @@ function drawFinal() {
     ctx.fillStyle = b.c; ctx.beginPath(); ctx.ellipse(sx, b.y, 24, 31, 0, 0, 7); ctx.fill();
     ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.beginPath(); ctx.ellipse(sx - 8, b.y - 10, 6, 10, -0.4, 0, 7); ctx.fill();
   }
+  for (const c of confetti) { ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.rot); ctx.fillStyle = c.c; ctx.fillRect(-c.w / 2, -c.h / 2, c.w, c.h); ctx.restore(); }
+  // conteúdo desenhado para 800 de altura, centralizado em telas mais altas
+  uiOY = Math.max(0, (H - 800) / 2);
+  ctx.save(); ctx.translate(0, uiOY);
   ctx.textAlign = 'center';
   const pop = smooth(ft / 0.6);
   ctx.save(); ctx.translate(W / 2, 120); ctx.scale(pop, pop);
@@ -869,12 +889,12 @@ function drawFinal() {
   drawCake(W / 2 + 50, 590);
   const bob = Math.abs(Math.sin(T * 4)) * 40;
   drawBall(95, 560 - bob, 34, { hat: true, sq: bob < 4 ? 1.15 : 0.95, lookX: 0.6, lookY: -0.2 });
-  for (const c of confetti) { ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.rot); ctx.fillStyle = c.c; ctx.fillRect(-c.w / 2, -c.h / 2, c.w, c.h); ctx.restore(); }
   ctx.font = `800 17px ${FB}`; ctx.fillStyle = '#4a1440'; ctx.fillText(`Sua subida levou ${fmtTime(playTime)}`, W / 2, 640);
   if (ft > 1.5) {
     drawButton('♪ Parabéns de novo', 28, 664, 206, 52, '#ffffff', '#7a1d5c', () => { initAudio(); playBirthday(); });
     drawButton('Jogar de novo', W - 234, 664, 206, 52, '#7dff9a', '#0d4a1f', () => { resetGame(); startPlay(); });
   }
+  ctx.restore(); uiOY = 0;
   if (ft < 1.2) { ctx.fillStyle = `rgba(255,255,255,${1 - ft / 1.2})`; ctx.fillRect(0, 0, W, H); }
 }
 
