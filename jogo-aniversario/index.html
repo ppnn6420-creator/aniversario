@@ -39,22 +39,18 @@ canvas { display: block; outline: none; }
 }
 #touch .group { display: flex; gap: 14px; }
 #touch button {
-  pointer-events: auto; width: 78px; height: 78px; border-radius: 50%;
+  pointer-events: auto; width: 92px; height: 92px; border-radius: 50%;
   border: 2px solid var(--btn-line); background: var(--btn); color: var(--btn-text);
   font-family: var(--display); font-size: 30px; touch-action: none;
   backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
 }
 #touch button:active, #touch button.on { background: rgba(255, 255, 255, 0.35); }
-#touch #bj { width: 104px; height: 104px; font-size: 22px; background: rgba(61, 220, 107, 0.35); border-color: var(--leaf); }
 </style>
 
 <div id="wrap"><canvas id="c" tabindex="0"></canvas></div>
 <div id="touch" hidden>
-  <div class="group">
-    <button id="bl" aria-label="Andar para a esquerda">◀</button>
-    <button id="br" aria-label="Andar para a direita">▶</button>
-  </div>
-  <button id="bj" aria-label="Pular">PULAR</button>
+  <button id="bl" aria-label="Andar para a esquerda">◀</button>
+  <button id="br" aria-label="Andar para a direita">▶</button>
 </div>
 
 <script>
@@ -114,7 +110,7 @@ function tone(f, d, type = 'sine', v = 0.2, when = 0, f2 = null) {
   o.connect(g); g.connect(master); o.start(t); o.stop(t + d + 0.05);
 }
 const sfx = {
-  jump: () => tone(320, 0.18, 'square', 0.07, 0, 640),
+  jump: () => tone(300, 0.16, 'sine', 0.07, 0, 600),
   land: () => tone(150, 0.07, 'sine', 0.1),
   hit: () => { tone(200, 0.35, 'sawtooth', 0.12, 0, 55); tone(90, 0.3, 'square', 0.06); },
   level: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.22, 'triangle', 0.14, i * 0.09)),
@@ -138,7 +134,7 @@ const LEVELS = [
   { name: 'O Espaço', plat: 'asteroid', obs: 'satellite', top: '#060a24', bot: '#1a2766', n: 5, spd: 100, w: [90, 120], move: 0.3, gap: [100, 126], stars: 1, meteors: true },
   { name: 'As Galáxias', plat: 'crystal', obs: 'comet', top: '#12062b', bot: '#3d1569', n: 6, spd: 120, w: [88, 115], move: 0.35, gap: [100, 128], stars: 1, meteors: true },
   { name: 'O Universo', plat: 'star', obs: 'hole', top: '#03010a', bot: '#170836', n: 6, spd: 1, w: [85, 110], move: 0.4, gap: [100, 128], stars: 1 },
-  { name: 'O Paraíso', plat: 'gold', obs: 'orb', top: '#ffe7a3', bot: '#ffd0ec', n: 4, spd: 70, w: [95, 125], move: 0.3, gap: [95, 118], stars: 0.15 },
+  { name: 'O Paraíso', plat: 'gold', obs: 'orb', top: '#f7b2e6', bot: '#b9a2ff', n: 4, spd: 70, w: [95, 125], move: 0.3, gap: [95, 118], stars: 0.15 },
 ];
 const LEVEL_H = 2300;
 const G = 1900, JUMP = 840, SPEED = 290;
@@ -177,11 +173,12 @@ function buildWorld() {
     }
     // obstáculos distribuídos pelo nível
     const pool = plats.slice(start + 3, plats.length - 1);
-    for (let k = 0; k < lv.n && pool.length; k++) {
-      const p = pool[Math.floor((k + 0.5) / lv.n * pool.length)];
+    const nObs = lv.n - (L > 0 ? 1 : 0);
+    for (let k = 0; k < nObs && pool.length; k++) {
+      const p = pool[Math.floor((k + 0.5) / nObs * pool.length)];
       const dir = rnd() < 0.5 ? -1 : 1;
       const r = { bird: 14, heli: 18, plane: 18, satellite: 17, comet: 15, hole: 22, orb: 15 }[lv.obs];
-      obstacles.push({ type: lv.obs, x: 40 + rnd() * (W - 80), y: p.y - 55, by: p.y - 55, r, vx: dir * lv.spd * (0.8 + rnd() * 0.4), ph: rnd() * 6.28, spd: 0.8 + rnd() * 0.5 });
+      obstacles.push({ type: lv.obs, x: 40 + rnd() * (W - 80), y: p.y - 55, by: p.y - 55, r, vx: dir * lv.spd * 0.8 * (0.8 + rnd() * 0.4), ph: rnd() * 6.28, spd: 0.8 + rnd() * 0.5 });
     }
   }
   y -= 120;
@@ -250,8 +247,15 @@ cv.addEventListener('pointerdown', e => {
   e.preventDefault(); initAudio();
   const r = cv.getBoundingClientRect(), x = (e.clientX - r.left) / r.width * W, y = (e.clientY - r.top) / r.height * H;
   for (const b of uiButtons) if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) { b.fn(); return; }
+  if (state === 'play') { const side = x < W / 2 ? 'left' : 'right'; held.set(e.pointerId, side); keys[side] = true; return; }
   pressJump();
 });
+const held = new Map();
+function releasePointer(e) {
+  const side = held.get(e.pointerId); if (!side) return;
+  held.delete(e.pointerId); if (![...held.values()].includes(side)) keys[side] = false;
+}
+addEventListener('pointerup', releasePointer); addEventListener('pointercancel', releasePointer);
 function holdBtn(id, key) {
   const el = document.getElementById(id);
   const on = e => { e.preventDefault(); keys[key] = true; el.classList.add('on'); };
@@ -259,7 +263,6 @@ function holdBtn(id, key) {
   el.addEventListener('pointerdown', on); el.addEventListener('pointerup', off); el.addEventListener('pointercancel', off); el.addEventListener('pointerleave', off);
 }
 holdBtn('bl', 'left'); holdBtn('br', 'right');
-document.getElementById('bj').addEventListener('pointerdown', e => { e.preventDefault(); pressJump(); });
 document.addEventListener('contextmenu', e => e.preventDefault());
 
 // ---------- partículas ----------
@@ -287,10 +290,8 @@ function hurt(kind, o) {
     toast = { text: 'Ops! De volta ao começo do nível', t: 0 };
   } else if (kind === 'fall') {
     placeOn(P.safe); toast = { text: 'Caiu! Perdeu um coração', t: 0 };
-  } else {
-    P.vy = -320; P.vx = (P.x < o.x ? -1 : 1) * 260; P.ground = null;
   }
-  P.inv = 1.6;
+  P.inv = 2;
 }
 function updatePlayer(dt) {
   const dir = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
@@ -298,8 +299,9 @@ function updatePlayer(dt) {
   if (dir) P.face = dir;
   if (P.buffer > 0) P.buffer -= dt;
   P.coyote = P.ground ? 0.09 : P.coyote - dt;
-  if (P.buffer > 0 && P.coyote > 0) {
-    P.vy = -JUMP; P.ground = null; P.coyote = 0; P.buffer = 0; P.sq = 0.75; sfx.jump();
+  // pulo automático: encostou numa plataforma, pula de novo
+  if (P.ground) {
+    P.vy = -JUMP; P.ground = null; P.sq = 0.75; sfx.jump();
     burst(P.x, P.y + P.r, 'rgba(255,255,255,0.8)', 6, 90);
   }
   if (P.ground) P.x += P.ground.dx;
@@ -314,7 +316,7 @@ function updatePlayer(dt) {
       if (p.y < P.y - 60 || p.y > P.y + 80) continue;
       if (P.x + P.r * 0.6 > p.x && P.x - P.r * 0.6 < p.x + p.w && prevBottom <= p.y + 2 && P.y + P.r >= p.y) {
         P.y = p.y - P.r; P.vy = 0; P.ground = p;
-        if (!wasGround) { P.sq = 1.3; sfx.land(); }
+        if (!wasGround) P.sq = 1.3;
         P.safe = p;
         if (p.lvl > reached) enterLevel(p.lvl);
         if (p.final) startEnding();
@@ -540,10 +542,10 @@ function drawPlat(p, cam) {
       const gold = p.type === 'gold';
       if (gold) { ctx.fillStyle = 'rgba(255,215,90,0.35)'; rr(x - 6, y - 6, w + 12, 32, 16); ctx.fill(); }
       const n = Math.max(3, Math.round(w / 28)), rad = Math.min(15, w / n * 0.62);
-      ctx.fillStyle = gold ? '#ffe9a6' : '#ffffff';
+      ctx.fillStyle = gold ? '#ffe28a' : '#ffffff';
       for (let k = 0; k < n; k++) { circle(x + (k + 0.5) * w / n, y + 11, rad + (k % 2) * 2); ctx.fill(); }
       rr(x, y + 4, w, 18, 9); ctx.fill();
-      ctx.fillStyle = gold ? '#f5c451' : '#dbe8fb'; rr(x + 4, y + 15, w - 8, 7, 4); ctx.fill();
+      ctx.fillStyle = gold ? '#e8a325' : '#dbe8fb'; rr(x + 4, y + 15, w - 8, 7, 4); ctx.fill();
       break;
     }
     case 'asteroid':
@@ -563,9 +565,9 @@ function drawPlat(p, cam) {
       break;
     }
     case 'gate': {
-      ctx.fillStyle = 'rgba(255,215,90,0.4)'; ctx.fillRect(0, y - 6, W, H);
+      ctx.fillStyle = 'rgba(255,215,90,0.4)'; rr(0, y - 6, W, 66, 24); ctx.fill();
       ctx.fillStyle = '#fff1bf'; for (let k = 0; k <= W; k += 30) { circle(k, y + 10, 20); ctx.fill(); }
-      ctx.fillRect(0, y + 10, W, H);
+      rr(0, y + 10, W, 40, 20); ctx.fill();
       drawGate(y);
       break;
     }
@@ -579,7 +581,7 @@ function drawGate(base) {
   const cx = W / 2, gw = 210, gh = 250, top = base - gh;
   // luz atrás do portão
   const glow = ctx.createRadialGradient(cx, base - 120, 10, cx, base - 120, 240 + gateOpen * 300);
-  glow.addColorStop(0, `rgba(255,255,255,${0.5 + gateOpen * 0.5})`); glow.addColorStop(1, 'rgba(255,240,180,0)');
+  glow.addColorStop(0, `rgba(255,255,255,${0.3 + gateOpen * 0.7})`); glow.addColorStop(1, 'rgba(255,240,180,0)');
   ctx.fillStyle = glow; ctx.fillRect(cx - 560, base - 700, 1120, 760);
   ctx.fillStyle = `rgba(255,255,240,${0.35 + gateOpen * 0.65})`; ctx.fillRect(cx - gw / 2, top + 20, gw, gh - 20);
   ctx.beginPath(); ctx.arc(cx, top + 20, gw / 2, Math.PI, 0); ctx.fill();
@@ -809,8 +811,8 @@ function drawIntro() {
     ctx.fillStyle = 'rgba(20,12,40,0.88)'; rr(24, 120, W - 48, 420, 22); ctx.fill(); ctx.strokeStyle = '#ffd34d'; ctx.lineWidth = 3; ctx.stroke();
     ctx.textAlign = 'center'; ctx.font = `36px ${FD}`; outlined('COMO JOGAR', W / 2, 172, '#ffd34d', '#3a1d5c', 6);
     const lines = isTouch
-      ? [['◀ ▶', 'botões para andar'], ['PULAR', 'um pulo de cada vez'], ['❤ ❤ ❤', 'bateu ou caiu, perde um']]
-      : [['← →  ou  A D', 'andar'], ['ESPAÇO  ou  ↑', 'pular (um de cada vez)'], ['❤ ❤ ❤', 'bateu ou caiu, perde um']];
+      ? [['◀  ▶', 'segure um lado da tela pra andar'], ['PULO AUTOMÁTICO', 'ela pula sozinha, você só guia'], ['❤ ❤ ❤', 'bateu ou caiu, perde um']]
+      : [['← →  ou  A D', 'andar'], ['PULO AUTOMÁTICO', 'ela pula sozinha, você só guia'], ['❤ ❤ ❤', 'bateu ou caiu, perde um']];
     lines.forEach(([k, d], i) => {
       ctx.font = `22px ${FD}`; ctx.fillStyle = '#7dff9a'; ctx.fillText(k, W / 2, 222 + i * 66);
       ctx.font = `700 17px ${FB}`; ctx.fillStyle = '#ffffff'; ctx.fillText(d, W / 2, 246 + i * 66);
